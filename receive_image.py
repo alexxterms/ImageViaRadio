@@ -38,11 +38,11 @@ class ImageReceiver:
             addr=my_addr,
             power=22,
             rssi=False,
-            air_speed=62500,  # Max speed
+            air_speed=24000,  # Max speed
             relay=False
         )
-        print(f"Receiver initialized: addr={my_addr}, freq={freq}MHz, airspeed=62.5kbps")
-        
+        print(f"Receiver initialized: addr={my_addr}, freq={freq}MHz, airspeed=24kbps")
+
         # Storage for active transfers: file_id -> transfer_state
         self.transfers = {}
 

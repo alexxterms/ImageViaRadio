@@ -20,7 +20,7 @@ import sx126x
 
 # Configuration
 SERIAL = "/dev/ttyS0"
-FREQ = 868
+FREQ = 433
 MY_ADDR = 0          # This node's address
 DEST_ADDR = 0        # Destination node address
 CHUNK_SIZE = 200     # Bytes of image data per chunk
@@ -43,10 +43,10 @@ class ImageSender:
             addr=my_addr,
             power=22,
             rssi=False,
-            air_speed=62500,  # Max speed for faster transfer
+            air_speed=24000,  # Max speed for faster transfer
             relay=False
         )
-        print(f"Sender initialized: addr={my_addr}, freq={freq}MHz, airspeed=62.5kbps")
+        print(f"Sender initialized: addr={my_addr}, freq={freq}MHz, airspeed=24kbps")
 
     def checksum(self, data):
         """Simple checksum: sum of all bytes modulo 256"""
