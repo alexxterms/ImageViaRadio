@@ -238,12 +238,15 @@ class ImageReceiver:
         
         try:
             while True:
-                # Check for incoming packets
-                if self.node.ser.in_waiting > 0:
-                    time.sleep(0.05)  # Let full packet arrive
-                    pkt = self.node.ser.read(self.node.ser.in_waiting)
+                # Check for incoming packets (use inWaiting() method like main.py)
+                if self.node.ser.inWaiting() > 0:
+                    time.sleep(0.5)  # Wait longer like main.py does
+                    pkt = self.node.ser.read(self.node.ser.inWaiting())
+                    
+                    print(f"[DEBUG] Received {len(pkt)} bytes")
                     
                     if len(pkt) < 6 + 5:  # Minimum valid packet
+                        print(f"[DEBUG] Packet too short, ignoring")
                         continue
                     
                     # Parse addressing (skip first 6 bytes)
@@ -253,6 +256,8 @@ class ImageReceiver:
                     pkt_type = payload[0]
                     file_id = (payload[1] << 8) | payload[2]
                     seq = (payload[3] << 8) | payload[4]
+                    
+                    print(f"[DEBUG] Packet type: 0x{pkt_type:02X}, file_id: 0x{file_id:04X}, seq: {seq}")
                     
                     # Extract sender address from packet header (bytes 3-4)
                     sender_addr = (pkt[3] << 8) | pkt[4]
@@ -285,7 +290,7 @@ class ImageReceiver:
                         transfer["end_received"] = True
                         self.handle_transfer_complete(file_id)
                 
-                time.sleep(0.05)
+                time.sleep(0.1)  # Small delay to avoid busy loop
         
         except KeyboardInterrupt:
             print("\n\nReceiver stopped.")
