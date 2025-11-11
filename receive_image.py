@@ -20,6 +20,7 @@ import sx126x
 SERIAL = "/dev/ttyS0"
 FREQ = 868
 MY_ADDR = 0          # This node's address
+CHUNK_SIZE = 200     # Expected chunk data size (must match sender)
 RECV_TIMEOUT = 5.0   # Seconds of silence before assuming END packet lost
 NACK_ACK_TIMEOUT = 3.0  # Seconds to wait for ACK of NACK list
 MAX_NACK_RETRIES = 3 # Maximum NACK list retries
@@ -230,53 +231,77 @@ class ImageReceiver:
         del self.transfers[file_id]
 
     def receive_loop(self):
-        """Main receive loop"""
+        """Main receive loop with packet boundary handling"""
         print("\nListening for incoming image transfers...")
         print("Press Ctrl+C to exit\n")
         
         last_activity = {}  # file_id -> last_packet_time
+        buffer = b""  # Buffer for incomplete packets
         
         try:
             while True:
-                # Check for incoming packets (use inWaiting() method like main.py)
+                # Check for incoming data - poll quickly to avoid buffer overflow
                 if self.node.ser.inWaiting() > 0:
-                    time.sleep(0.5)  # Wait longer like main.py does
-                    pkt = self.node.ser.read(self.node.ser.inWaiting())
+                    # Read available data immediately (don't wait 0.5s!)
+                    incoming = self.node.ser.read(self.node.ser.inWaiting())
+                    buffer += incoming
                     
-                    print(f"[DEBUG] Received {len(pkt)} bytes")
+                    print(f"[DEBUG] Read {len(incoming)} bytes, buffer now {len(buffer)} bytes")
                     
-                    if len(pkt) < 6 + 5:  # Minimum valid packet
-                        print(f"[DEBUG] Packet too short, ignoring")
-                        continue
-                    
-                    # Parse addressing (skip first 6 bytes)
-                    payload = pkt[6:]
-                    
-                    # Parse payload
-                    pkt_type = payload[0]
-                    file_id = (payload[1] << 8) | payload[2]
-                    seq = (payload[3] << 8) | payload[4]
-                    
-                    print(f"[DEBUG] Packet type: 0x{pkt_type:02X}, file_id: 0x{file_id:04X}, seq: {seq}")
-                    
-                    # Extract sender address from packet header (bytes 3-4)
-                    sender_addr = (pkt[3] << 8) | pkt[4]
-                    
-                    # Update activity timestamp
-                    last_activity[file_id] = time.time()
-                    
-                    # Dispatch based on packet type
-                    if pkt_type == PKT_DATA:
-                        if len(payload) < 6:
+                    # Process complete packets from buffer
+                    while len(buffer) >= 11:  # Minimum packet size: 6 + 5
+                        # Peek at packet type to determine expected size
+                        if len(buffer) < 11:
+                            break
+                        
+                        pkt_type = buffer[6]  # Type is at offset 6 (after addressing)
+                        
+                        # Calculate expected packet size based on type
+                        if pkt_type == PKT_DATA:
+                            # DATA: 6 (addr) + 1 (type) + 2 (file_id) + 2 (seq) + 1 (checksum) + data
+                            expected_size = 6 + 1 + 2 + 2 + 1 + CHUNK_SIZE  # Should be 212 bytes
+                        elif pkt_type == PKT_END:
+                            # END: 6 (addr) + 1 (type) + 2 (file_id) + 2 (seq/total)
+                            expected_size = 6 + 1 + 2 + 2
+                        elif pkt_type == PKT_ACK:
+                            # ACK: 6 (addr) + 1 (type) + 2 (file_id) + 2 (seq)
+                            expected_size = 6 + 1 + 2 + 2
+                        else:
+                            # Unknown packet type - try to resync
+                            print(f"[WARN] Unknown packet type 0x{pkt_type:02X}, searching for sync...")
+                            # Look for next potential packet start (heuristic: skip 1 byte)
+                            buffer = buffer[1:]
                             continue
-                        checksum_byte = payload[5]
-                        chunk_data = payload[6:]
-                        self.process_data_packet(sender_addr, file_id, seq, checksum_byte, chunk_data)
-                    
-                    elif pkt_type == PKT_END:
-                        # seq field contains total_chunks for END packet
-                        total_chunks = seq
-                        self.process_end_packet(sender_addr, file_id, total_chunks)
+                        
+                        # Wait for complete packet
+                        if len(buffer) < expected_size:
+                            print(f"[DEBUG] Waiting for complete packet ({len(buffer)}/{expected_size} bytes)")
+                            break
+                        
+                        # Extract one complete packet
+                        pkt = buffer[:expected_size]
+                        buffer = buffer[expected_size:]  # Remove from buffer
+                        
+                        print(f"[DEBUG] Processing packet: {len(pkt)} bytes, type=0x{pkt_type:02X}")
+                        
+                        # Parse packet
+                        payload = pkt[6:]
+                        file_id = (payload[1] << 8) | payload[2]
+                        seq = (payload[3] << 8) | payload[4]
+                        sender_addr = (pkt[3] << 8) | pkt[4]
+                        
+                        # Update activity timestamp
+                        last_activity[file_id] = time.time()
+                        
+                        # Dispatch based on packet type
+                        if pkt_type == PKT_DATA:
+                            checksum_byte = payload[5]
+                            chunk_data = payload[6:]
+                            self.process_data_packet(sender_addr, file_id, seq, checksum_byte, chunk_data)
+                        
+                        elif pkt_type == PKT_END:
+                            total_chunks = seq
+                            self.process_end_packet(sender_addr, file_id, total_chunks)
                 
                 # Check for timeouts (END packet might have been lost)
                 now = time.time()
@@ -290,7 +315,7 @@ class ImageReceiver:
                         transfer["end_received"] = True
                         self.handle_transfer_complete(file_id)
                 
-                time.sleep(0.1)  # Small delay to avoid busy loop
+                time.sleep(0.01)  # Very small delay - fast polling for high speed
         
         except KeyboardInterrupt:
             print("\n\nReceiver stopped.")
