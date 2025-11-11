@@ -28,7 +28,8 @@ INTER_CHUNK_DELAY = 0.8  # Seconds between chunks (matches 2.4kbps transmission 
 NACK_TIMEOUT = 15.0  # Seconds to wait for NACK list after END packet
 MAX_RETRY_ROUNDS = 3 # Maximum retransmission rounds
 
-# Packet type markers
+# Packet markers
+SYNC_BYTE = 0x7E  # Start of packet marker
 PKT_DATA = 0x01
 PKT_END = 0xFF
 PKT_ACK = 0xAA
@@ -90,7 +91,10 @@ class ImageSender:
         return file_id, total_chunks, file_size
 
     def build_packet(self, pkt_type, file_id, seq, data=b""):
-        """Build packet with addressing header + payload"""
+        """Build packet with sync byte + addressing header + payload"""
+        # Start with sync byte for packet boundary detection
+        sync = bytes([SYNC_BYTE])
+        
         # Addressing header (6 bytes)
         header = bytes([
             (self.dest_addr >> 8) & 0xFF, self.dest_addr & 0xFF, self.node.offset_freq,
@@ -104,7 +108,7 @@ class ImageSender:
             (seq >> 8) & 0xFF, seq & 0xFF
         ]) + data
         
-        return header + payload
+        return sync + header + payload
 
     def send_packet(self, packet):
         """Send a packet via the LoRa module"""
@@ -151,11 +155,15 @@ class ImageSender:
                 time.sleep(0.1)  # Let full packet arrive
                 pkt = self.node.ser.read(self.node.ser.inWaiting())
                 
-                if len(pkt) < 6 + 5:  # min: 6 addressing + 1 type + 2 file_id + 2 num_missing
+                # Check for sync byte
+                if len(pkt) < 1 or pkt[0] != SYNC_BYTE:
                     continue
                 
-                # Parse: skip 6 addressing bytes
-                payload = pkt[6:]
+                if len(pkt) < 7 + 5:  # min: 1 (sync) + 6 (addressing) + 1 (type) + 2 (file_id) + 2 (num_missing)
+                    continue
+                
+                # Parse: skip sync + 6 addressing bytes
+                payload = pkt[7:]
                 pkt_type = payload[0]
                 recv_file_id = (payload[1] << 8) | payload[2]
                 
