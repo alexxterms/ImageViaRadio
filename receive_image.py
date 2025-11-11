@@ -1,5 +1,8 @@
 #!/usr/bin/python
-# -*- coding: UTF-8 -*-
+# -MY_ADDR = 0          # This node's address
+CHUNK_SIZE = 200     # Expected chunk data size (must match sender)
+RECV_TIMEOUT = 10.0  # Seconds of silence before assuming END packet lost
+NACK_ACK_TIMEOUT = 3.0  # Seconds to wait for ACK of NACK listoding: UTF-8 -*-
 
 """
 Image Receiver with Chunk Validation + NACK List
@@ -331,6 +334,8 @@ class ImageReceiver:
                     transfer = self.transfers[file_id]
                     if not transfer["end_received"] and time_since_last_data > RECV_TIMEOUT:
                         print(f"\n⚠ Timeout for file_id 0x{file_id:04X}, assuming END packet lost")
+                        print(f"   Received {len(transfer['chunks'])} chunks so far")
+                        print(f"   Time since last data: {time_since_last_data:.1f}s")
                         # Infer total from max received seq
                         max_seq = max(transfer["chunks"].keys()) if transfer["chunks"] else 0
                         transfer["total_expected"] = max_seq + 1

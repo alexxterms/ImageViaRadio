@@ -24,8 +24,8 @@ FREQ = 868
 MY_ADDR = 0          # This node's address
 DEST_ADDR = 0        # Destination node address
 CHUNK_SIZE = 200     # Bytes of image data per chunk
-INTER_CHUNK_DELAY = 0.05  # Seconds between chunks during bulk send
-NACK_TIMEOUT = 10.0  # Seconds to wait for NACK list after END packet
+INTER_CHUNK_DELAY = 0.8  # Seconds between chunks (matches 2.4kbps transmission time)
+NACK_TIMEOUT = 15.0  # Seconds to wait for NACK list after END packet
 MAX_RETRY_ROUNDS = 3 # Maximum retransmission rounds
 
 # Packet type markers
