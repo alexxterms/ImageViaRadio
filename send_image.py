@@ -132,12 +132,14 @@ class ImageSender:
                 time.sleep(INTER_CHUNK_DELAY)
         
         print(f"\nAll {total_chunks} chunks sent.")
+        # Wait a bit longer before END packet to let last chunk fully transmit
+        time.sleep(0.5)
 
     def send_end_packet(self, file_id, total_chunks):
         """Send END marker packet with total_chunks in seq field"""
         packet = self.build_packet(PKT_END, file_id, total_chunks)
         self.send_packet(packet)
-        print(f"END packet sent (total_chunks={total_chunks}).")
+        print(f"END packet sent: file_id=0x{file_id:04X}, total_chunks={total_chunks}")
 
     def wait_for_nack(self, file_id, timeout=NACK_TIMEOUT):
         """Wait for NACK list from receiver"""
@@ -145,9 +147,9 @@ class ImageSender:
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            if self.node.ser.in_waiting > 0:
+            if self.node.ser.inWaiting() > 0:
                 time.sleep(0.1)  # Let full packet arrive
-                pkt = self.node.ser.read(self.node.ser.in_waiting)
+                pkt = self.node.ser.read(self.node.ser.inWaiting())
                 
                 if len(pkt) < 6 + 5:  # min: 6 addressing + 1 type + 2 file_id + 2 num_missing
                     continue
