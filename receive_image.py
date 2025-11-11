@@ -264,7 +264,9 @@ class ImageReceiver:
                         # Look for sync byte at start of buffer
                         if buffer[0] != SYNC_BYTE:
                             if DEBUG:
-                                print(f"[WARN] No sync byte at buffer start (0x{buffer[0]:02X}), searching...")
+                                print(f"[WARN] No sync byte at buffer start (got 0x{buffer[0]:02X}, expected 0x{SYNC_BYTE:02X})")
+                                if len(buffer) >= 10:
+                                    print(f"[DEBUG] Buffer preview: {' '.join(f'0x{b:02X}' for b in buffer[:10])}")
                             # Search for next sync byte
                             sync_pos = buffer.find(bytes([SYNC_BYTE]), 1)
                             if sync_pos == -1:
