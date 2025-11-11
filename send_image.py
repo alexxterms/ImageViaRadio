@@ -43,10 +43,10 @@ class ImageSender:
             addr=my_addr,
             power=22,
             rssi=False,
-            air_speed=24000,  # Max speed for faster transfer
+            air_speed=38400,  # 38.4 kbps for better range
             relay=False
         )
-        print(f"Sender initialized: addr={my_addr}, freq={freq}MHz, airspeed=24kbps")
+        print(f"Sender initialized: addr={my_addr}, freq={freq}MHz, airspeed=38.4kbps")
 
     def checksum(self, data):
         """Simple checksum: sum of all bytes modulo 256"""
