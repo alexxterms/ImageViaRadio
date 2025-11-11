@@ -18,7 +18,7 @@ import sx126x
 
 # Configuration
 SERIAL = "/dev/ttyS0"
-FREQ = 433
+FREQ = 868
 MY_ADDR = 0          # This node's address
 RECV_TIMEOUT = 5.0   # Seconds of silence before assuming END packet lost
 NACK_ACK_TIMEOUT = 3.0  # Seconds to wait for ACK of NACK list

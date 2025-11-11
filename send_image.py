@@ -20,7 +20,7 @@ import sx126x
 
 # Configuration
 SERIAL = "/dev/ttyS0"
-FREQ = 433
+FREQ = 868
 MY_ADDR = 0          # This node's address
 DEST_ADDR = 0        # Destination node address
 CHUNK_SIZE = 200     # Bytes of image data per chunk
