@@ -133,11 +133,11 @@ class ImageSender:
         
         print(f"\nAll {total_chunks} chunks sent.")
 
-    def send_end_packet(self, file_id):
-        """Send END marker packet"""
-        packet = self.build_packet(PKT_END, file_id, 0xFFFF)
+    def send_end_packet(self, file_id, total_chunks):
+        """Send END marker packet with total_chunks in seq field"""
+        packet = self.build_packet(PKT_END, file_id, total_chunks)
         self.send_packet(packet)
-        print("END packet sent.")
+        print(f"END packet sent (total_chunks={total_chunks}).")
 
     def wait_for_nack(self, file_id, timeout=NACK_TIMEOUT):
         """Wait for NACK list from receiver"""
@@ -237,7 +237,7 @@ class ImageSender:
         try:
             # Phase 1: Bulk send
             self.send_all_chunks(chunk_file, file_id, total_chunks)
-            self.send_end_packet(file_id)
+            self.send_end_packet(file_id, total_chunks)
             
             # Phase 2: Retry loop
             for retry_round in range(MAX_RETRY_ROUNDS):
@@ -247,7 +247,7 @@ class ImageSender:
                     print(f"✗ No response from receiver (round {retry_round + 1}/{MAX_RETRY_ROUNDS})")
                     if retry_round < MAX_RETRY_ROUNDS - 1:
                         print("Resending END packet...")
-                        self.send_end_packet(file_id)
+                        self.send_end_packet(file_id, total_chunks)
                     continue
                 
                 if len(missing_seqs) == 0:
@@ -263,7 +263,7 @@ class ImageSender:
                 
                 # Retransmit missing chunks
                 self.retransmit_chunks(chunk_file, file_id, missing_seqs)
-                self.send_end_packet(file_id)
+                self.send_end_packet(file_id, total_chunks)
             else:
                 print(f"\n✗ Transfer failed after {MAX_RETRY_ROUNDS} retry rounds")
         

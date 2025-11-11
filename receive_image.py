@@ -24,6 +24,7 @@ CHUNK_SIZE = 200     # Expected chunk data size (must match sender)
 RECV_TIMEOUT = 5.0   # Seconds of silence before assuming END packet lost
 NACK_ACK_TIMEOUT = 3.0  # Seconds to wait for ACK of NACK list
 MAX_NACK_RETRIES = 3 # Maximum NACK list retries
+DEBUG = True         # Set to False to reduce debug output
 
 # Packet type markers
 PKT_DATA = 0x01
@@ -246,7 +247,8 @@ class ImageReceiver:
                     incoming = self.node.ser.read(self.node.ser.inWaiting())
                     buffer += incoming
                     
-                    print(f"[DEBUG] Read {len(incoming)} bytes, buffer now {len(buffer)} bytes")
+                    if DEBUG:
+                        print(f"[DEBUG] Read {len(incoming)} bytes, buffer now {len(buffer)} bytes")
                     
                     # Process complete packets from buffer
                     while len(buffer) >= 11:  # Minimum packet size: 6 + 5
@@ -266,23 +268,38 @@ class ImageReceiver:
                         elif pkt_type == PKT_ACK:
                             # ACK: 6 (addr) + 1 (type) + 2 (file_id) + 2 (seq)
                             expected_size = 6 + 1 + 2 + 2
+                        elif pkt_type == 0xDD:
+                            # NACK list - variable size, need to parse num_missing
+                            if len(buffer) < 11:
+                                break
+                            num_missing = (buffer[9] << 8) | buffer[10]
+                            expected_size = 6 + 1 + 2 + 2 + (num_missing * 2)
                         else:
-                            # Unknown packet type - try to resync
-                            print(f"[WARN] Unknown packet type 0x{pkt_type:02X}, searching for sync...")
-                            # Look for next potential packet start (heuristic: skip 1 byte)
+                            # Unknown packet type - likely not our protocol
+                            # Check if buffer looks like raw file data (not our packets)
+                            if len(buffer) > 50 and buffer.count(0x00) > len(buffer) // 4:
+                                print(f"[ERROR] Receiving raw file data, not protocol packets!")
+                                print(f"[ERROR] Make sure sender is using send_image.py, not raw file transfer")
+                                print(f"[ERROR] Clearing {len(buffer)} bytes of junk data...")
+                                buffer = b""  # Clear entire buffer
+                                break
+                            
+                            # Try to resync - skip 1 byte and look for valid packet type
                             buffer = buffer[1:]
                             continue
                         
                         # Wait for complete packet
                         if len(buffer) < expected_size:
-                            print(f"[DEBUG] Waiting for complete packet ({len(buffer)}/{expected_size} bytes)")
+                            if DEBUG:
+                                print(f"[DEBUG] Waiting for complete packet ({len(buffer)}/{expected_size} bytes)")
                             break
                         
                         # Extract one complete packet
                         pkt = buffer[:expected_size]
                         buffer = buffer[expected_size:]  # Remove from buffer
                         
-                        print(f"[DEBUG] Processing packet: {len(pkt)} bytes, type=0x{pkt_type:02X}")
+                        if DEBUG:
+                            print(f"[DEBUG] Processing packet: {len(pkt)} bytes, type=0x{pkt_type:02X}, file_id=0x{(pkt[7] << 8) | pkt[8]:04X}")
                         
                         # Parse packet
                         payload = pkt[6:]
