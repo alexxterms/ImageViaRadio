@@ -237,6 +237,7 @@ class ImageReceiver:
         print("Press Ctrl+C to exit\n")
         
         last_activity = {}  # file_id -> last_packet_time
+        last_data_received = time.time()  # Global: any data activity
         buffer = b""  # Buffer for incomplete packets
         
         try:
@@ -246,6 +247,7 @@ class ImageReceiver:
                     # Read available data immediately (don't wait 0.5s!)
                     incoming = self.node.ser.read(self.node.ser.inWaiting())
                     buffer += incoming
+                    last_data_received = time.time()  # Update activity timestamp
                     
                     if DEBUG:
                         print(f"[DEBUG] Read {len(incoming)} bytes, buffer now {len(buffer)} bytes")
@@ -321,10 +323,13 @@ class ImageReceiver:
                             self.process_end_packet(sender_addr, file_id, total_chunks)
                 
                 # Check for timeouts (END packet might have been lost)
+                # Only timeout if we haven't received ANY data (not even partial packets)
                 now = time.time()
+                time_since_last_data = now - last_data_received
+                
                 for file_id in list(self.transfers.keys()):
                     transfer = self.transfers[file_id]
-                    if not transfer["end_received"] and now - transfer["last_time"] > RECV_TIMEOUT:
+                    if not transfer["end_received"] and time_since_last_data > RECV_TIMEOUT:
                         print(f"\n⚠ Timeout for file_id 0x{file_id:04X}, assuming END packet lost")
                         # Infer total from max received seq
                         max_seq = max(transfer["chunks"].keys()) if transfer["chunks"] else 0
