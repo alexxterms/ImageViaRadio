@@ -90,7 +90,7 @@ class ImageSender:
         return file_id, total_chunks, file_size
 
     def build_packet(self, pkt_type, file_id, seq, data=b""):
-        """Build packet with addressing header + payload"""
+        """Build packet with length prefix + addressing header + payload"""
         # Addressing header (6 bytes)
         header = bytes([
             (self.dest_addr >> 8) & 0xFF, self.dest_addr & 0xFF, self.node.offset_freq,
@@ -104,7 +104,16 @@ class ImageSender:
             (seq >> 8) & 0xFF, seq & 0xFF
         ]) + data
         
-        return header + payload
+        # Calculate total packet length (header + payload)
+        total_length = len(header) + len(payload)
+        
+        # Length prefix (2 bytes) + packet
+        length_prefix = bytes([
+            (total_length >> 8) & 0xFF,
+            total_length & 0xFF
+        ])
+        
+        return length_prefix + header + payload
 
     def send_packet(self, packet):
         """Send a packet via the LoRa module"""

@@ -253,52 +253,33 @@ class ImageReceiver:
                         print(f"[DEBUG] Read {len(incoming)} bytes, buffer now {len(buffer)} bytes")
                     
                     # Process complete packets from buffer
-                    while len(buffer) >= 11:  # Minimum packet size: 6 + 5
-                        # Peek at packet type to determine expected size
-                        if len(buffer) < 11:
-                            break
+                    while len(buffer) >= 2:  # Need at least 2 bytes for length prefix
+                        # Read length prefix (2 bytes at start of packet)
+                        packet_length = (buffer[0] << 8) | buffer[1]
                         
-                        pkt_type = buffer[6]  # Type is at offset 6 (after addressing)
-                        
-                        # Calculate expected packet size based on type
-                        if pkt_type == PKT_DATA:
-                            # DATA: 6 (addr) + 1 (type) + 2 (file_id) + 2 (seq) + 1 (checksum) + data
-                            expected_size = 6 + 1 + 2 + 2 + 1 + CHUNK_SIZE  # Should be 212 bytes
-                        elif pkt_type == PKT_END:
-                            # END: 6 (addr) + 1 (type) + 2 (file_id) + 2 (seq/total)
-                            expected_size = 6 + 1 + 2 + 2
-                        elif pkt_type == PKT_ACK:
-                            # ACK: 6 (addr) + 1 (type) + 2 (file_id) + 2 (seq)
-                            expected_size = 6 + 1 + 2 + 2
-                        elif pkt_type == 0xDD:
-                            # NACK list - variable size, need to parse num_missing
-                            if len(buffer) < 11:
-                                break
-                            num_missing = (buffer[9] << 8) | buffer[10]
-                            expected_size = 6 + 1 + 2 + 2 + (num_missing * 2)
-                        else:
-                            # Unknown packet type - likely not our protocol
-                            # Check if buffer looks like raw file data (not our packets)
-                            if len(buffer) > 50 and buffer.count(0x00) > len(buffer) // 4:
-                                print(f"[ERROR] Receiving raw file data, not protocol packets!")
-                                print(f"[ERROR] Make sure sender is using send_image.py, not raw file transfer")
-                                print(f"[ERROR] Clearing {len(buffer)} bytes of junk data...")
-                                buffer = b""  # Clear entire buffer
-                                break
-                            
-                            # Try to resync - skip 1 byte and look for valid packet type
-                            buffer = buffer[1:]
+                        # Sanity check: packet length should be reasonable (11-230 bytes)
+                        if packet_length < 11 or packet_length > 230:
+                            # Invalid length - likely out of sync
+                            print(f"[WARN] Invalid packet length {packet_length}, resyncing...")
+                            buffer = buffer[1:]  # Skip 1 byte and try again
                             continue
                         
-                        # Wait for complete packet
-                        if len(buffer) < expected_size:
+                        # Wait for complete packet (length prefix + actual packet)
+                        total_needed = 2 + packet_length
+                        if len(buffer) < total_needed:
                             if DEBUG:
-                                print(f"[DEBUG] Waiting for complete packet ({len(buffer)}/{expected_size} bytes)")
+                                print(f"[DEBUG] Waiting for complete packet ({len(buffer)}/{total_needed} bytes)")
                             break
                         
-                        # Extract one complete packet
-                        pkt = buffer[:expected_size]
-                        buffer = buffer[expected_size:]  # Remove from buffer
+                        # Extract packet (skip the 2-byte length prefix)
+                        pkt = buffer[2:total_needed]
+                        buffer = buffer[total_needed:]  # Remove from buffer
+                        
+                        if len(pkt) < 6 + 5:  # Minimum: 6 addressing + 5 payload
+                            print(f"[WARN] Packet too short ({len(pkt)} bytes), ignoring")
+                            continue
+                        
+                        pkt_type = pkt[6]  # Type is at offset 6 (after addressing)
                         
                         if DEBUG:
                             print(f"[DEBUG] Processing packet: {len(pkt)} bytes, type=0x{pkt_type:02X}, file_id=0x{(pkt[7] << 8) | pkt[8]:04X}")
