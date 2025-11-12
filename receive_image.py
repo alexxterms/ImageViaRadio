@@ -1,8 +1,5 @@
 #!/usr/bin/python
-# -MY_ADDR = 0          # This node's address
-CHUNK_SIZE = 200     # Expected chunk data size (must match sender)
-RECV_TIMEOUT = 10.0  # Seconds of silence before assuming END packet lost
-NACK_ACK_TIMEOUT = 3.0  # Seconds to wait for ACK of NACK listoding: UTF-8 -*-
+# -*- coding: UTF-8 -*-
 
 """
 Image Receiver with Chunk Validation + NACK List
@@ -24,13 +21,12 @@ SERIAL = "/dev/ttyS0"
 FREQ = 868
 MY_ADDR = 0          # This node's address
 CHUNK_SIZE = 200     # Expected chunk data size (must match sender)
-RECV_TIMEOUT = 15   # Seconds of silence before assuming END packet lost
+RECV_TIMEOUT = 10.0  # Seconds of silence before assuming END packet lost
 NACK_ACK_TIMEOUT = 3.0  # Seconds to wait for ACK of NACK list
 MAX_NACK_RETRIES = 3 # Maximum NACK list retries
 DEBUG = True         # Set to False to reduce debug output
 
-# Packet markers
-SYNC_BYTE = 0x7E  # Start of packet marker
+# Packet type markers
 PKT_DATA = 0x01
 PKT_END = 0xFF
 PKT_ACK = 0xAA
@@ -48,7 +44,7 @@ class ImageReceiver:
             relay=False
         )
         print(f"Receiver initialized: addr={my_addr}, freq={freq}MHz, airspeed=2.4kbps")
-
+        
         # Storage for active transfers: file_id -> transfer_state
         self.transfers = {}
 
@@ -57,10 +53,7 @@ class ImageReceiver:
         return sum(data) % 256
 
     def build_packet(self, dest_addr, pkt_type, file_id, seq, data=b""):
-        """Build packet with sync byte + addressing header + payload"""
-        # Start with sync byte
-        sync = bytes([SYNC_BYTE])
-        
+        """Build packet with addressing header + payload"""
         # Addressing header (6 bytes)
         header = bytes([
             (dest_addr >> 8) & 0xFF, dest_addr & 0xFF, self.node.offset_freq,
@@ -74,7 +67,7 @@ class ImageReceiver:
             (seq >> 8) & 0xFF, seq & 0xFF
         ]) + data
         
-        return sync + header + payload
+        return header + payload
 
     def send_packet(self, packet):
         """Send a packet via the LoRa module"""
@@ -86,8 +79,8 @@ class ImageReceiver:
         num_missing = len(missing_seqs)
         
         # Check if NACK list fits in one packet (240 byte limit)
-        # 1 (sync) + 6 (addressing) + 1 (type) + 2 (file_id) + 2 (num) + 2*num_missing
-        max_seqs_per_packet = (228) // 2  # Conservative: ~114 seqs
+        # 6 (addressing) + 1 (type) + 2 (file_id) + 2 (num) + 2*num_missing
+        max_seqs_per_packet = (230) // 2  # Conservative: ~115 seqs
         
         if num_missing > max_seqs_per_packet:
             print(f"⚠ Warning: NACK list too large ({num_missing} seqs), truncating to {max_seqs_per_packet}")
@@ -113,9 +106,9 @@ class ImageReceiver:
         start_time = time.time()
         
         while time.time() - start_time < timeout:
-            if self.node.ser.in_waiting > 0:
+            if self.node.ser.inWaiting() > 0:
                 time.sleep(0.05)
-                pkt = self.node.ser.read(self.node.ser.in_waiting)
+                pkt = self.node.ser.read(self.node.ser.inWaiting())
                 
                 if len(pkt) < 6 + 5:
                     continue
@@ -157,7 +150,7 @@ class ImageReceiver:
         transfer["chunks"][seq] = chunk_data
         transfer["last_time"] = time.time()
         
-        print(f"✓ Received chunk {seq} ({len(chunk_data)} bytes, {len(transfer['chunks'])} total)", end='\r')
+        print(f"✓ Received chunk {seq} ({len(chunk_data)} bytes, {len(transfer['chunks'])} total)")
         return True
 
     def process_end_packet(self, sender_addr, file_id, total_chunks):
@@ -260,59 +253,29 @@ class ImageReceiver:
                         print(f"[DEBUG] Read {len(incoming)} bytes, buffer now {len(buffer)} bytes")
                     
                     # Process complete packets from buffer
-                    while len(buffer) >= 12:  # Minimum: 1 (sync) + 6 (addr) + 5 (min payload)
-                        # Look for sync byte at start of buffer
-                        if buffer[0] != SYNC_BYTE:
-                            if DEBUG:
-                                print(f"[WARN] No sync byte at buffer start (got 0x{buffer[0]:02X}, expected 0x{SYNC_BYTE:02X})")
-                                if len(buffer) >= 10:
-                                    print(f"[DEBUG] Buffer preview: {' '.join(f'0x{b:02X}' for b in buffer[:10])}")
-                            # Search for next sync byte
-                            sync_pos = buffer.find(bytes([SYNC_BYTE]), 1)
-                            if sync_pos == -1:
-                                # No sync byte found, clear buffer except last byte (might be partial sync)
-                                if DEBUG:
-                                    print(f"[WARN] No sync byte found in {len(buffer)} bytes, clearing buffer")
-                                buffer = buffer[-1:] if len(buffer) > 0 else b""
-                                break
-                            else:
-                                # Found sync, skip to it
-                                if DEBUG:
-                                    print(f"[DEBUG] Found sync byte at offset {sync_pos}, skipping {sync_pos} bytes")
-                                buffer = buffer[sync_pos:]
-                                continue
-                        
-                        # Now buffer[0] == SYNC_BYTE
-                        # Check if we have enough for header
-                        if len(buffer) < 12:
+                    while len(buffer) >= 11:  # Minimum packet size: 6 + 5
+                        # Peek at packet type to determine expected size
+                        if len(buffer) < 11:
                             break
                         
-                        pkt_type = buffer[7]  # Type is at offset 7 (1 sync + 6 addressing)
-                        
-                        # Validate packet type - if unknown, we're out of sync
-                        if pkt_type not in [PKT_DATA, PKT_END, PKT_ACK, 0xDD]:
-                            if DEBUG:
-                                print(f"[WARN] Invalid packet type 0x{pkt_type:02X} at offset 6, searching for sync...")
-                            # Try to resync - skip 1 byte and look for valid packet type
-                            buffer = buffer[1:]
-                            continue
+                        pkt_type = buffer[6]  # Type is at offset 6 (after addressing)
                         
                         # Calculate expected packet size based on type
                         if pkt_type == PKT_DATA:
-                            # DATA: 1 (sync) + 6 (addr) + 1 (type) + 2 (file_id) + 2 (seq) + 1 (checksum) + data
-                            expected_size = 1 + 6 + 1 + 2 + 2 + 1 + CHUNK_SIZE  # Should be 213 bytes
+                            # DATA: 6 (addr) + 1 (type) + 2 (file_id) + 2 (seq) + 1 (checksum) + data
+                            expected_size = 6 + 1 + 2 + 2 + 1 + CHUNK_SIZE  # Should be 212 bytes
                         elif pkt_type == PKT_END:
-                            # END: 1 (sync) + 6 (addr) + 1 (type) + 2 (file_id) + 2 (seq/total)
-                            expected_size = 1 + 6 + 1 + 2 + 2
+                            # END: 6 (addr) + 1 (type) + 2 (file_id) + 2 (seq/total)
+                            expected_size = 6 + 1 + 2 + 2
                         elif pkt_type == PKT_ACK:
-                            # ACK: 1 (sync) + 6 (addr) + 1 (type) + 2 (file_id) + 2 (seq)
-                            expected_size = 1 + 6 + 1 + 2 + 2
+                            # ACK: 6 (addr) + 1 (type) + 2 (file_id) + 2 (seq)
+                            expected_size = 6 + 1 + 2 + 2
                         elif pkt_type == 0xDD:
                             # NACK list - variable size, need to parse num_missing
-                            if len(buffer) < 12:
+                            if len(buffer) < 11:
                                 break
-                            num_missing = (buffer[10] << 8) | buffer[11]
-                            expected_size = 1 + 6 + 1 + 2 + 2 + (num_missing * 2)
+                            num_missing = (buffer[9] << 8) | buffer[10]
+                            expected_size = 6 + 1 + 2 + 2 + (num_missing * 2)
                         else:
                             # Unknown packet type - likely not our protocol
                             # Check if buffer looks like raw file data (not our packets)
@@ -338,13 +301,13 @@ class ImageReceiver:
                         buffer = buffer[expected_size:]  # Remove from buffer
                         
                         if DEBUG:
-                            print(f"[DEBUG] Processing packet: {len(pkt)} bytes, type=0x{pkt_type:02X}, file_id=0x{(pkt[8] << 8) | pkt[9]:04X}")
+                            print(f"[DEBUG] Processing packet: {len(pkt)} bytes, type=0x{pkt_type:02X}, file_id=0x{(pkt[7] << 8) | pkt[8]:04X}")
                         
-                        # Parse packet (skip sync byte)
-                        payload = pkt[7:]  # Skip 1 (sync) + 6 (addressing)
+                        # Parse packet
+                        payload = pkt[6:]
                         file_id = (payload[1] << 8) | payload[2]
                         seq = (payload[3] << 8) | payload[4]
-                        sender_addr = (pkt[4] << 8) | pkt[5]  # Adjust for sync byte offset
+                        sender_addr = (pkt[3] << 8) | pkt[4]
                         
                         # Update activity timestamp
                         last_activity[file_id] = time.time()
