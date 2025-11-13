@@ -224,31 +224,36 @@ class ImageReceiver:
         print("-" * 50 + "\n")
         
         packet_count = 0
+        last_packet_time = 0
         
         try:
             while True:
                 if self.node.ser.inWaiting() > 0:
-                    packet_count += 1
+                    # Small initial wait for data to accumulate
+                    time.sleep(0.05)
                     
-                    # Wait longer for complete packet to arrive
-                    # At 2400 bps, 240 bytes takes ~800ms
-                    time.sleep(0.5)
-                    
-                    # Read all available data
-                    raw_data = self.node.ser.read(self.node.ser.inWaiting())
-                    
-                    # Only show debug for recognized packets
-                    if len(raw_data) > 3:
-                        payload = raw_data[3:]
-                        if payload.startswith(b'IMGSTART'):
-                            print(f"\n[Packet #{packet_count}] START packet ({len(raw_data)} bytes)")
-                        elif payload.startswith(b'IMGDATA'):
-                            # Don't print for every data packet, just process
-                            pass
-                        elif payload.startswith(b'IMG_END'):
-                            print(f"\n[Packet #{packet_count}] END packet ({len(raw_data)} bytes)")
-                    
-                    self.process_packet(raw_data)
+                    # Keep reading while more data is coming
+                    bytes_waiting = self.node.ser.inWaiting()
+                    if bytes_waiting > 0:
+                        # Wait a bit more if buffer is still filling
+                        time.sleep(0.15)
+                        
+                        # Read all available data
+                        raw_data = self.node.ser.read(self.node.ser.inWaiting())
+                        
+                        # Process packet
+                        if len(raw_data) > 3:
+                            packet_count += 1
+                            current_time = time.time()
+                            
+                            payload = raw_data[3:]
+                            if payload.startswith(b'IMGSTART'):
+                                print(f"\n[Packet #{packet_count}] START packet ({len(raw_data)} bytes)")
+                            elif payload.startswith(b'IMG_END'):
+                                print(f"\n[Packet #{packet_count}] END packet ({len(raw_data)} bytes)")
+                            
+                            self.process_packet(raw_data)
+                            last_packet_time = current_time
                 
                 time.sleep(0.01)  # Small delay to prevent CPU spinning
                 
