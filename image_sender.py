@@ -49,13 +49,45 @@ class ImageSender:
         """Calculate MD5 checksum of data"""
         return hashlib.md5(data).hexdigest()
     
-    def send_image(self, image_path, delay_between_packets=4.0):
+    def wait_for_ack(self, packet_id, timeout=2.0):
+        """
+        Wait for ACK from receiver
+        
+        Args:
+            packet_id: Identifier for the packet
+            timeout: How long to wait in seconds
+            
+        Returns:
+            True if ACK received, False if timeout
+        """
+        start_time = time.time()
+        expected_ack = f"ACK_{packet_id}".encode()
+        
+        while time.time() - start_time < timeout:
+            if self.node.ser.inWaiting() > 0:
+                time.sleep(0.05)
+                response = self.node.ser.read(self.node.ser.inWaiting())
+                
+                # ACK format: [addr][addr][freq][ACK_xxxxx]
+                if len(response) > 3:
+                    payload = response[3:]
+                    if payload.startswith(b'ACK_'):
+                        # Got an ACK, check if it's for our packet
+                        return True
+            
+            time.sleep(0.01)
+        
+        return False
+    
+    def send_image(self, image_path, delay_between_packets=1.0, wait_for_ack=True, max_retries=3):
         """
         Send an image file via LoRa
         
         Args:
             image_path: Path to the JPEG image file
             delay_between_packets: Delay in seconds between packets (default: 1.0)
+            wait_for_ack: Wait for ACK from receiver (default: True)
+            max_retries: Maximum retry attempts per packet (default: 3)
         """
         if not os.path.exists(image_path):
             print(f"Error: Image file '{image_path}' not found!")
@@ -85,23 +117,54 @@ class ImageSender:
         
         # Send START packet with metadata
         self.send_start_packet(file_name, file_size, total_chunks, checksum)
-        time.sleep(0.5)  # Give receiver time to prepare
+        
+        if wait_for_ack:
+            if not self.wait_for_ack("START", timeout=5.0):
+                print("\nNo ACK for START packet. Receiver may not be ready.")
+                return False
+        else:
+            time.sleep(0.5)  # Give receiver time to prepare
         
         # Send data chunks
+        failed_chunks = []
         for chunk_num in range(total_chunks):
             start_idx = chunk_num * self.chunk_size
             end_idx = min(start_idx + self.chunk_size, file_size)
             chunk_data = image_data[start_idx:end_idx]
             
-            self.send_data_packet(chunk_num, chunk_data)
+            # Try sending with retries
+            success = False
+            for attempt in range(max_retries):
+                self.send_data_packet(chunk_num, chunk_data)
+                
+                if wait_for_ack:
+                    if self.wait_for_ack(f"DATA_{chunk_num}", timeout=2.0):
+                        success = True
+                        break
+                    elif attempt < max_retries - 1:
+                        print(f"\nRetry chunk {chunk_num} (attempt {attempt + 2}/{max_retries})")
+                        time.sleep(0.5)
+                else:
+                    success = True
+                    time.sleep(delay_between_packets)
+                    break
+            
+            if not success:
+                failed_chunks.append(chunk_num)
             
             # Progress indicator
             progress = (chunk_num + 1) / total_chunks * 100
             print(f"\rProgress: [{chunk_num + 1}/{total_chunks}] {progress:.1f}%", end='', flush=True)
             
-            time.sleep(delay_between_packets)
+            if wait_for_ack:
+                time.sleep(0.1)  # Small delay between packets when using ACK
         
         print("\n")
+        
+        # Report failed chunks
+        if failed_chunks:
+            print(f"\nWarning: {len(failed_chunks)} chunks failed after {max_retries} attempts")
+            print(f"Failed chunks: {failed_chunks[:10]}{'...' if len(failed_chunks) > 10 else ''}")
         
         # Send END packet
         self.send_end_packet(total_chunks, checksum)

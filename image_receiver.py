@@ -69,6 +69,16 @@ class ImageReceiver:
         self.received_chunks = {}
         self.start_time = None
     
+    def send_ack(self, packet_id):
+        """Send ACK back to sender"""
+        try:
+            ack_message = f"ACK_{packet_id}".encode()
+            # Simple ACK packet - just send the message
+            # The LoRa module will add addressing automatically
+            self.node.ser.write(ack_message)
+        except Exception as e:
+            print(f"\nError sending ACK: {e}")
+    
     def process_packet(self, raw_data):
         """Process received packet"""
         try:
@@ -89,10 +99,14 @@ class ImageReceiver:
             # Check packet type
             if payload.startswith(b'IMGSTART'):
                 self.handle_start_packet(payload)
+                self.send_ack("START")
             elif payload.startswith(b'IMGDATA'):
-                self.handle_data_packet(payload)
+                chunk_num = self.handle_data_packet(payload)
+                if chunk_num is not None:
+                    self.send_ack(f"DATA_{chunk_num}")
             elif payload.startswith(b'IMG_END'):
                 self.handle_end_packet(payload)
+                self.send_ack("END")
                 
         except Exception as e:
             print(f"\nError processing packet: {e}")
@@ -137,7 +151,7 @@ class ImageReceiver:
     def handle_data_packet(self, payload):
         """Handle DATA packet"""
         if not self.receiving:
-            return
+            return None
         
         try:
             # Parse: [Header: 7] [chunk_num: 4] [chunk_data]
@@ -154,8 +168,11 @@ class ImageReceiver:
                 print(f"\rReceived: [{received_count}/{self.total_chunks}] {progress:.1f}%", 
                       end='', flush=True)
             
+            return chunk_num
+            
         except Exception as e:
             print(f"\nError parsing DATA packet: {e}")
+            return None
     
     def handle_end_packet(self, payload):
         """Handle END packet and save the image"""
