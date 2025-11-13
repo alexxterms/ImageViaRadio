@@ -49,7 +49,7 @@ class ImageSender:
         """Calculate MD5 checksum of data"""
         return hashlib.md5(data).hexdigest()
     
-    def send_image(self, image_path, delay_between_packets=1.0):
+    def send_image(self, image_path, delay_between_packets=4.0):
         """
         Send an image file via LoRa
         
