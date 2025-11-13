@@ -52,6 +52,8 @@ class ImageReceiver:
         self.expected_checksum = None
         self.received_chunks = {}
         self.start_time = None
+        self.last_packet_time = None
+        self.packet_times = []  # Track time between packets for ETA
         
         print("LoRa module initialized successfully!")
         
@@ -68,6 +70,8 @@ class ImageReceiver:
         self.expected_checksum = None
         self.received_chunks = {}
         self.start_time = None
+        self.last_packet_time = None
+        self.packet_times = []
     
     def send_ack(self, packet_id):
         """Send ACK back to sender"""
@@ -149,6 +153,8 @@ class ImageReceiver:
             
             self.receiving = True
             self.start_time = time.time()
+            self.last_packet_time = time.time()
+            self.packet_times = []
             
             print(f"\n{'='*50}")
             print(f"Receiving image: {self.filename}")
@@ -175,10 +181,38 @@ class ImageReceiver:
             if chunk_num not in self.received_chunks:
                 self.received_chunks[chunk_num] = chunk_data
                 
-                # Progress indicator
+                # Track packet timing for ETA calculation
+                current_time = time.time()
+                if self.last_packet_time is not None:
+                    time_since_last = current_time - self.last_packet_time
+                    self.packet_times.append(time_since_last)
+                    # Keep only last 10 packets for moving average
+                    if len(self.packet_times) > 10:
+                        self.packet_times.pop(0)
+                self.last_packet_time = current_time
+                
+                # Progress indicator with ETA
                 received_count = len(self.received_chunks)
                 progress = received_count / self.total_chunks * 100
-                print(f"\rReceived: [{received_count}/{self.total_chunks}] {progress:.1f}%", 
+                
+                # Calculate ETA
+                eta_str = ""
+                if len(self.packet_times) >= 2:
+                    avg_time_per_packet = sum(self.packet_times) / len(self.packet_times)
+                    remaining_packets = self.total_chunks - received_count
+                    eta_seconds = avg_time_per_packet * remaining_packets
+                    
+                    # Format ETA
+                    if eta_seconds < 60:
+                        eta_str = f" | ETA: {eta_seconds:.0f}s"
+                    else:
+                        eta_minutes = eta_seconds / 60
+                        eta_str = f" | ETA: {eta_minutes:.1f}m"
+                
+                elapsed = current_time - self.start_time
+                elapsed_str = f"{elapsed:.1f}s" if elapsed < 60 else f"{elapsed/60:.1f}m"
+                
+                print(f"\rReceived: [{received_count}/{self.total_chunks}] {progress:.1f}% | Elapsed: {elapsed_str}{eta_str}", 
                       end='', flush=True)
             
             return chunk_num
