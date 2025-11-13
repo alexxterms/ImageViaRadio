@@ -49,13 +49,13 @@ class ImageSender:
         """Calculate MD5 checksum of data"""
         return hashlib.md5(data).hexdigest()
     
-    def wait_for_ack(self, packet_id, timeout=5.0):
+    def wait_for_ack(self, packet_id, timeout=2.0):
         """
         Wait for ACK from receiver
         
         Args:
             packet_id: Identifier for the packet
-            timeout: How long to wait in seconds
+            timeout: How long to wait in seconds (default: 2.0)
             
         Returns:
             True if ACK received, False if timeout
@@ -80,13 +80,13 @@ class ImageSender:
         
         return False
     
-    def send_image(self, image_path, delay_between_packets=1.0, wait_for_ack=True, max_retries=3):
+    def send_image(self, image_path, delay_between_packets=0.1, wait_for_ack=True, max_retries=3):
         """
         Send an image file via LoRa
         
         Args:
             image_path: Path to the JPEG image file
-            delay_between_packets: Delay in seconds between packets (default: 1.0)
+            delay_between_packets: Delay in seconds between packets (default: 0.1 - ACK system ensures reliability)
             wait_for_ack: Wait for ACK from receiver (default: True)
             max_retries: Maximum retry attempts per packet (default: 3)
         """
@@ -121,7 +121,7 @@ class ImageSender:
         
         if wait_for_ack:
             print("Waiting for START ACK...", end='', flush=True)
-            if not self.wait_for_ack("START", timeout=10.0):
+            if not self.wait_for_ack("START", timeout=3.0):
                 print("\nNo ACK for START packet. Receiver may not be ready.")
                 return False
             print(" [ACK received]")
@@ -141,12 +141,12 @@ class ImageSender:
                 self.send_data_packet(chunk_num, chunk_data)
                 
                 if wait_for_ack:
-                    if self.wait_for_ack(f"DATA_{chunk_num}", timeout=5.0):
+                    if self.wait_for_ack(f"DATA_{chunk_num}", timeout=2.0):
                         success = True
                         break
                     elif attempt < max_retries - 1:
                         print(f"\nRetry chunk {chunk_num} (attempt {attempt + 2}/{max_retries})")
-                        time.sleep(0.5)
+                        time.sleep(0.2)
                 else:
                     success = True
                     time.sleep(delay_between_packets)
