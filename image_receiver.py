@@ -73,9 +73,22 @@ class ImageReceiver:
         """Send ACK back to sender"""
         try:
             ack_message = f"ACK_{packet_id}".encode()
-            # Simple ACK packet - just send the message
-            # The LoRa module will add addressing automatically
-            self.node.ser.write(ack_message)
+            
+            # Format ACK packet with proper LoRa addressing
+            # [target_addr_high] [target_addr_low] [freq_offset] [own_addr_high] [own_addr_low] [own_freq_offset] [payload]
+            sender_addr = 0  # The sender's address (default is 0)
+            offset_freq = self.node.offset_freq
+            
+            packet = bytes([sender_addr >> 8])  # Target address high byte
+            packet += bytes([sender_addr & 0xff])  # Target address low byte
+            packet += bytes([offset_freq])  # Target frequency offset
+            packet += bytes([self.node.addr >> 8])  # Own address high byte
+            packet += bytes([self.node.addr & 0xff])  # Own address low byte
+            packet += bytes([self.node.offset_freq])  # Own frequency offset
+            packet += ack_message
+            
+            self.node.send(packet)
+            print(f" [ACK sent for {packet_id}]", end='')
         except Exception as e:
             print(f"\nError sending ACK: {e}")
     

@@ -49,7 +49,7 @@ class ImageSender:
         """Calculate MD5 checksum of data"""
         return hashlib.md5(data).hexdigest()
     
-    def wait_for_ack(self, packet_id, timeout=2.0):
+    def wait_for_ack(self, packet_id, timeout=5.0):
         """
         Wait for ACK from receiver
         
@@ -65,7 +65,7 @@ class ImageSender:
         
         while time.time() - start_time < timeout:
             if self.node.ser.inWaiting() > 0:
-                time.sleep(0.05)
+                time.sleep(0.1)  # Wait a bit for complete ACK
                 response = self.node.ser.read(self.node.ser.inWaiting())
                 
                 # ACK format: [addr][addr][freq][ACK_xxxxx]
@@ -73,9 +73,10 @@ class ImageSender:
                     payload = response[3:]
                     if payload.startswith(b'ACK_'):
                         # Got an ACK, check if it's for our packet
-                        return True
+                        if expected_ack in payload or b'ACK_' in payload:
+                            return True
             
-            time.sleep(0.01)
+            time.sleep(0.05)
         
         return False
     
@@ -119,9 +120,11 @@ class ImageSender:
         self.send_start_packet(file_name, file_size, total_chunks, checksum)
         
         if wait_for_ack:
-            if not self.wait_for_ack("START", timeout=5.0):
+            print("Waiting for START ACK...", end='', flush=True)
+            if not self.wait_for_ack("START", timeout=10.0):
                 print("\nNo ACK for START packet. Receiver may not be ready.")
                 return False
+            print(" [ACK received]")
         else:
             time.sleep(0.5)  # Give receiver time to prepare
         
@@ -138,7 +141,7 @@ class ImageSender:
                 self.send_data_packet(chunk_num, chunk_data)
                 
                 if wait_for_ack:
-                    if self.wait_for_ack(f"DATA_{chunk_num}", timeout=2.0):
+                    if self.wait_for_ack(f"DATA_{chunk_num}", timeout=5.0):
                         success = True
                         break
                     elif attempt < max_retries - 1:
