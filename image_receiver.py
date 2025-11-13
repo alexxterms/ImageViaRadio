@@ -77,7 +77,6 @@ class ImageReceiver:
             # So we skip the first 3 bytes to get to the payload
             
             if len(raw_data) < 3:
-                print(f" - Packet too short ({len(raw_data)} bytes)")
                 return
             
             # Skip first 3 bytes (sender address + frequency)
@@ -87,28 +86,13 @@ class ImageReceiver:
             else:
                 payload = raw_data[3:]  # Skip first 3 bytes only
             
-            # Debug: Show first bytes of payload
-            if len(payload) > 0:
-                header_preview = payload[:20]
-                try:
-                    header_str = header_preview.decode('utf-8', errors='replace')
-                    print(f" - Payload starts with: {repr(header_str[:15])}")
-                except:
-                    print(f" - Payload (hex): {' '.join(f'{b:02x}' for b in header_preview)}")
-            
             # Check packet type
             if payload.startswith(b'IMGSTART'):
-                print(" - Type: IMGSTART packet")
                 self.handle_start_packet(payload)
             elif payload.startswith(b'IMGDATA'):
                 self.handle_data_packet(payload)
             elif payload.startswith(b'IMG_END'):
-                print(" - Type: IMG_END packet")
                 self.handle_end_packet(payload)
-            else:
-                # Packet not recognized - show why
-                if len(payload) > 10:
-                    print(f" - NOT RECOGNIZED (first 10 bytes: {payload[:10]})")
                 
         except Exception as e:
             print(f"\nError processing packet: {e}")
@@ -245,25 +229,24 @@ class ImageReceiver:
             while True:
                 if self.node.ser.inWaiting() > 0:
                     packet_count += 1
-                    time.sleep(0.1)  # Wait for full packet
+                    
+                    # Wait longer for complete packet to arrive
+                    # At 2400 bps, 240 bytes takes ~800ms
+                    time.sleep(0.5)
+                    
+                    # Read all available data
                     raw_data = self.node.ser.read(self.node.ser.inWaiting())
                     
-                    # Debug: Show we received something
-                    print(f"[Packet #{packet_count}] Received {len(raw_data)} bytes", end='')
-                    
-                    # Show packet type if we can identify it
-                    if len(raw_data) > 6:
-                        payload = raw_data[6:]
+                    # Only show debug for recognized packets
+                    if len(raw_data) > 3:
+                        payload = raw_data[3:]
                         if payload.startswith(b'IMGSTART'):
-                            print(" - START packet")
+                            print(f"\n[Packet #{packet_count}] START packet ({len(raw_data)} bytes)")
                         elif payload.startswith(b'IMGDATA'):
-                            print(" - DATA packet", end='')
+                            # Don't print for every data packet, just process
+                            pass
                         elif payload.startswith(b'IMG_END'):
-                            print(" - END packet")
-                        else:
-                            print(" - Unknown")
-                    else:
-                        print()
+                            print(f"\n[Packet #{packet_count}] END packet ({len(raw_data)} bytes)")
                     
                     self.process_packet(raw_data)
                 
