@@ -72,25 +72,48 @@ class ImageReceiver:
     def process_packet(self, raw_data):
         """Process received packet"""
         try:
-            # Parse LoRa packet header (first 6 bytes)
-            # [target_addr_high] [target_addr_low] [freq_offset] 
-            # [sender_addr_high] [sender_addr_low] [sender_freq_offset] [payload]
+            # The LoRa module receives data in this format:
+            # [sender_addr_high] [sender_addr_low] [sender_freq_offset] [payload...] [rssi if enabled]
+            # So we skip the first 3 bytes to get to the payload
             
-            if len(raw_data) < 6:
+            if len(raw_data) < 3:
+                print(f" - Packet too short ({len(raw_data)} bytes)")
                 return
             
-            payload = raw_data[6:]  # Skip the 6-byte header
+            # Skip first 3 bytes (sender address + frequency)
+            # If RSSI is enabled, skip last byte too
+            if self.node.rssi and len(raw_data) > 3:
+                payload = raw_data[3:-1]  # Skip first 3 and last 1
+            else:
+                payload = raw_data[3:]  # Skip first 3 bytes only
+            
+            # Debug: Show first bytes of payload
+            if len(payload) > 0:
+                header_preview = payload[:20]
+                try:
+                    header_str = header_preview.decode('utf-8', errors='replace')
+                    print(f" - Payload starts with: {repr(header_str[:15])}")
+                except:
+                    print(f" - Payload (hex): {' '.join(f'{b:02x}' for b in header_preview)}")
             
             # Check packet type
             if payload.startswith(b'IMGSTART'):
+                print(" - Type: IMGSTART packet")
                 self.handle_start_packet(payload)
             elif payload.startswith(b'IMGDATA'):
                 self.handle_data_packet(payload)
             elif payload.startswith(b'IMG_END'):
+                print(" - Type: IMG_END packet")
                 self.handle_end_packet(payload)
+            else:
+                # Packet not recognized - show why
+                if len(payload) > 10:
+                    print(f" - NOT RECOGNIZED (first 10 bytes: {payload[:10]})")
                 
         except Exception as e:
             print(f"\nError processing packet: {e}")
+            import traceback
+            traceback.print_exc()
     
     def handle_start_packet(self, payload):
         """Handle START packet"""
