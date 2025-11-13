@@ -224,38 +224,43 @@ class ImageReceiver:
         print("-" * 50 + "\n")
         
         packet_count = 0
-        last_packet_time = 0
+        last_check_time = time.time()
         
         try:
             while True:
-                if self.node.ser.inWaiting() > 0:
-                    # Small initial wait for data to accumulate
-                    time.sleep(0.05)
-                    
-                    # Keep reading while more data is coming
-                    bytes_waiting = self.node.ser.inWaiting()
-                    if bytes_waiting > 0:
-                        # Wait a bit more if buffer is still filling
-                        time.sleep(0.15)
-                        
-                        # Read all available data
-                        raw_data = self.node.ser.read(self.node.ser.inWaiting())
-                        
-                        # Process packet
-                        if len(raw_data) > 3:
-                            packet_count += 1
-                            current_time = time.time()
-                            
-                            payload = raw_data[3:]
-                            if payload.startswith(b'IMGSTART'):
-                                print(f"\n[Packet #{packet_count}] START packet ({len(raw_data)} bytes)")
-                            elif payload.startswith(b'IMG_END'):
-                                print(f"\n[Packet #{packet_count}] END packet ({len(raw_data)} bytes)")
-                            
-                            self.process_packet(raw_data)
-                            last_packet_time = current_time
+                # Check if data is available
+                bytes_waiting = self.node.ser.inWaiting()
                 
-                time.sleep(0.01)  # Small delay to prevent CPU spinning
+                if bytes_waiting > 0:
+                    # Show that we detected data
+                    current_time = time.time()
+                    if current_time - last_check_time > 2:  # Print status every 2 seconds
+                        print(f"[Status] Buffer has {bytes_waiting} bytes waiting...")
+                        last_check_time = current_time
+                    
+                    # Give a short moment for complete packet to arrive
+                    time.sleep(0.1)
+                    
+                    # Read what's available now
+                    raw_data = self.node.ser.read(self.node.ser.inWaiting())
+                    
+                    if len(raw_data) > 3:
+                        packet_count += 1
+                        
+                        payload = raw_data[3:]
+                        if payload.startswith(b'IMGSTART'):
+                            print(f"\n[Packet #{packet_count}] START packet ({len(raw_data)} bytes)")
+                        elif payload.startswith(b'IMG_END'):
+                            print(f"\n[Packet #{packet_count}] END packet ({len(raw_data)} bytes)")
+                        elif payload.startswith(b'IMGDATA'):
+                            # Show occasional progress for data packets
+                            if packet_count % 10 == 0:
+                                print(f"[Packet #{packet_count}] DATA packet ({len(raw_data)} bytes)")
+                        
+                        self.process_packet(raw_data)
+                else:
+                    # No data waiting, small sleep to prevent CPU spinning
+                    time.sleep(0.01)
                 
         except KeyboardInterrupt:
             print("\n\nReceiver stopped by user")
