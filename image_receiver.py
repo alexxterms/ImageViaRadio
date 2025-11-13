@@ -238,8 +238,8 @@ class ImageReceiver:
                         print(f"[Status] Buffer has {bytes_waiting} bytes waiting...")
                         last_check_time = current_time
                     
-                    # Give a short moment for complete packet to arrive
-                    time.sleep(0.1)
+                    # Give more time for complete packet to arrive at slow air speed
+                    time.sleep(0.3)
                     
                     # Read what's available now
                     raw_data = self.node.ser.read(self.node.ser.inWaiting())

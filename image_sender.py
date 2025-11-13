@@ -49,13 +49,13 @@ class ImageSender:
         """Calculate MD5 checksum of data"""
         return hashlib.md5(data).hexdigest()
     
-    def send_image(self, image_path, delay_between_packets=0.3):
+    def send_image(self, image_path, delay_between_packets=1.0):
         """
         Send an image file via LoRa
         
         Args:
             image_path: Path to the JPEG image file
-            delay_between_packets: Delay in seconds between packets (default: 0.3)
+            delay_between_packets: Delay in seconds between packets (default: 1.0)
         """
         if not os.path.exists(image_path):
             print(f"Error: Image file '{image_path}' not found!")
