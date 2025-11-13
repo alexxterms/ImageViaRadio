@@ -209,19 +209,46 @@ class ImageReceiver:
     def listen(self):
         """Listen for incoming packets"""
         print("\nListening for images... (Press Ctrl+C to exit)")
+        print(f"Configuration:")
+        print(f"  Frequency: {self.node.freq} MHz")
+        print(f"  Own address: {self.node.addr}")
+        print(f"  Air speed: 2400 bps")
+        print(f"  Buffer size: 240 bytes")
         print("-" * 50 + "\n")
+        
+        packet_count = 0
         
         try:
             while True:
                 if self.node.ser.inWaiting() > 0:
+                    packet_count += 1
                     time.sleep(0.1)  # Wait for full packet
                     raw_data = self.node.ser.read(self.node.ser.inWaiting())
+                    
+                    # Debug: Show we received something
+                    print(f"[Packet #{packet_count}] Received {len(raw_data)} bytes", end='')
+                    
+                    # Show packet type if we can identify it
+                    if len(raw_data) > 6:
+                        payload = raw_data[6:]
+                        if payload.startswith(b'IMGSTART'):
+                            print(" - START packet")
+                        elif payload.startswith(b'IMGDATA'):
+                            print(" - DATA packet", end='')
+                        elif payload.startswith(b'IMG_END'):
+                            print(" - END packet")
+                        else:
+                            print(" - Unknown")
+                    else:
+                        print()
+                    
                     self.process_packet(raw_data)
                 
                 time.sleep(0.01)  # Small delay to prevent CPU spinning
                 
         except KeyboardInterrupt:
             print("\n\nReceiver stopped by user")
+            print(f"Total packets received: {packet_count}")
 
 
 def main():
